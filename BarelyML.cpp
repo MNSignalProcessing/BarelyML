@@ -4,7 +4,7 @@
  BarelyML.cpp
  Created: 5 Oct 2023
  Author:  Fritz Menzer
- Version: 0.2
+ Version: 0.2.1
 
  ==============================================================================
  Copyright (C) 2023 Fritz Menzer
@@ -114,11 +114,11 @@ void BarelyMLDisplay::resized()
   int h = margin;
   for (int i=0; i<blocks.size(); i++) {
     int bh;
-    bh = blocks[i]->getHeightRequired(getWidth()-2*margin);
+    bh = blocks[i]->getHeightRequired(getWidth()-2*margin)+5;  // just to be on the safe side
     if (blocks[i]->canExtendBeyondMargin()) {
       blocks[i]->setBounds(0,h,getWidth(),bh);
     } else {
-      blocks[i]->setBounds(margin,h,getWidth()-2*margin,bh);
+      blocks[i]->setBounds(margin,h,getWidth()-2*margin,bh+10);
     }
     h += bh;
   }
@@ -190,14 +190,17 @@ void BarelyMLDisplay::setMarkupString(String s) {
       li++;                                         // ...and go to next line.
     } else {                                        // otherwise we assume that we have a text block
       StringArray blines;                           // set up text block lines
+      bool blockEnd = false;
       while (!ListItem::isListItem(line) &&         // while line is not part of a list...
              !TableBlock::isTableLine(line) &&      // ...nor a table...
              !AdmonitionBlock::isAdmonitionLine(line) && // ...nor an admonition...
              !ImageBlock::isImageLine(line) &&      // ...nor an image...
              !Block::containsLink(line) &&          // ...and doesn't contain a link...
-             li<lines.size()) {                     // ...and we're not done yet...
+             li<lines.size() && !blockEnd) {        // ...and we're not done yet...
         blines.add(line);                           // ...add line to text block lines...
-        line = lines[++li];                         // ...and read next line.
+        blockEnd = line.isEmpty();                  // ...and set up shouldEndBlock...
+        line = lines[++li];                         // ...read next line...
+        blockEnd &= line.isNotEmpty();              // ...and finish shouldEndBloc...
       }
       TextBlock* b = new TextBlock();               // set up a new text block object...
       b->setColours(&colours);                      // ...set its colours...
@@ -237,7 +240,7 @@ String BarelyMLDisplay::convertFromMarkdown(String md) {
       String address = line.substring(idx2+2, idx3);
       line = line.substring(0, idx1) + "{{" + address + "}}" + line.substring(idx3+2);
     }
-    // replace links
+    // replace links with labels
     while (line.contains("[") &&
                line.fromFirstOccurrenceOf("[", false, false).contains("](") &&
                line.fromLastOccurrenceOf("](", false, false).contains(")")) {
@@ -247,7 +250,20 @@ String BarelyMLDisplay::convertFromMarkdown(String md) {
       int idx3 = line.indexOf(idx2+2, ")");
       String text = line.substring(idx1+1, idx2);
       String address = line.substring(idx2+2, idx3);
-      line = line.substring(0, idx1) + "[[" + address + "|" + text + "]]" + line.substring(idx3+2);
+      line = line.substring(0, idx1) + "[[" + address + "|" + text + "]]" + line.substring(idx3+1);
+    }
+    // replace links without labels
+    while (line.contains("<") &&
+           line.fromFirstOccurrenceOf("<", false, false).contains(">") && (
+           line.fromFirstOccurrenceOf("<", false, false).startsWith("http://") ||
+           line.fromFirstOccurrenceOf("<", false, false).startsWith("https://") ||
+           line.fromFirstOccurrenceOf("<", false, false).startsWith("mailto:"))
+          ) {
+      // replace links
+      int idx1 = line.indexOf("<");
+      int idx2 = line.indexOf(idx1+1, ">");
+      String address = line.substring(idx1+1, idx2);
+      line = line.substring(0, idx1) + "[[" + address + "]]" + line.substring(idx2+1);
     }
     // when in a table, skip lines which look like this : | --- | --- |
     if (!lastLineWasTable || !(line.containsOnly("| -\t") && line.isNotEmpty())) {
@@ -261,7 +277,7 @@ String BarelyMLDisplay::convertFromMarkdown(String md) {
       } else {
         lastLineWasTable = false;         // ...otherwise, keep also track.
       }
-      bml += line + "\n";
+      bml += line + (li<lines.size()-1?"\n":"");
     }
   }
   // replace bold and italic markers
@@ -274,11 +290,60 @@ String BarelyMLDisplay::convertFromMarkdown(String md) {
 }
 
 String BarelyMLDisplay::convertToMarkdown(String bml) {
-  // NOTE: for now, all this method does is convert a BarelyML string
-  //       to something that convertFromMarkdown will turn into a
-  //       BarelyML string again.
+  StringArray lines;
+  lines.addLines(bml);
+  String md;
+  
+  bool isTable = false;
+  for (int li=0; li<lines.size(); li++) {
+    String line = lines[li];
+    
+    // replace table headers
+    if (line.startsWith("^") && !isTable) {
+      isTable = true;
+      line = line.replace("^", "|");
+      // count columns
+      String tmp = line.substring(1);
+      Array<int> colWidths;
+      while (tmp.contains("|")) {
+        colWidths.add(tmp.indexOf("|"));
+        tmp = tmp.fromFirstOccurrenceOf("|", false, false);
+      }
+      if (!colWidths.isEmpty()) {
+        line += "\n|";
+        for (int i=0; i<colWidths.size(); i++) {
+          int nhyphen = jmax(3,colWidths[i]-2);
+          line += " ";
+          while (nhyphen>0) {
+            line += "-";
+            nhyphen--;
+          }
+          line += " |";
+        }
+      }
+    }
+    if (line.startsWith("^") | line.startsWith("|")) {
+      isTable = true;
+    } else {
+      isTable = false;
+    }
+    
+    // replace links
+    while (line.contains("[[") && line.fromFirstOccurrenceOf("[[", false, false).contains("]]")) {
+      int idx1 = line.indexOf("[[");
+      int idx2 = line.indexOf(idx1, "]]");
+      String link = line.substring(idx1+2, idx2);
+      if (link.contains("|")) {
+        line = line.substring(0, idx1) + "[" + link.fromFirstOccurrenceOf("|", false, false) + "](" + link.upToFirstOccurrenceOf("|", false, false)  + ")" + line.substring(idx2+2);
+      } else {
+        line = line.substring(0, idx1) + "<" + link + ">" + line.substring(idx2+2);
+      }
+    }
 
-  String md = bml;
+    // add line
+    md += line + (li<lines.size()-1?"\n":"");
+  }
+  
   // replace bold markers
   md = md.replace("*", "**");
   return md;
@@ -325,7 +390,7 @@ String BarelyMLDisplay::convertFromDokuWiki(String dw) {
     if (line.startsWith("        * ")) { line = "   - " + line.substring(10); }
     if (line.startsWith("          * ")) { line = "    - " + line.substring(12); }
     // add line
-    bml += line + "\n";
+    bml += line + (li<lines.size()-1?"\n":"");
   }
   
   // save the URLs
@@ -348,10 +413,6 @@ String BarelyMLDisplay::convertFromDokuWiki(String dw) {
 }
 
 String BarelyMLDisplay::convertToDokuWiki(String bml) {
-  // NOTE: for now, all this method does is convert a BarelyML string
-  //       to something that convertFromDokuWiki will turn into a
-  //       BarelyML string again.
-  
   StringArray lines;
   lines.addLines(bml);
   String dw;
@@ -383,7 +444,7 @@ String BarelyMLDisplay::convertToDokuWiki(String bml) {
       if (                       line.substring(0, didx).containsOnly("0123456789")) { line = "  - " + line.substring(didx+2); }
     }
     // add line
-    dw += line + "\n";
+    dw += line + (li<lines.size()-1?"\n":"");
   }
 
   // replace color markers (supporting a subset of the "color" plugin syntax)
@@ -493,6 +554,10 @@ String BarelyMLDisplay::convertFromAsciiDoc(String ad) {
           int idx2 = line.indexOf(idx1, " ");
           if (idx2<0) { idx2 = line.indexOf(idx1, "\t"); }
           if (idx2<0) { idx2 = line.length(); }
+          // needed for cases like this: [JUCE Forum] (space in label)
+          if (line.substring(idx1, idx2).contains("[")) {
+            idx2 = jmax(idx2, line.indexOf(idx1, "]")+1);
+          }
           String link = line.substring(idx1, idx2);
           if (link.contains("[") && link.endsWith("]")) {
             int lidx = link.indexOf("[");
@@ -506,7 +571,7 @@ String BarelyMLDisplay::convertFromAsciiDoc(String ad) {
 
     // add line
     if (!skipLine) {
-      bml += line + "\n";
+      bml += line + (li<lines.size()-1?"\n":"");
     }
   }
   
@@ -526,10 +591,6 @@ String BarelyMLDisplay::convertFromAsciiDoc(String ad) {
 }
 
 String BarelyMLDisplay::convertToAsciiDoc(String bml) {
-  // NOTE: for now, all this method does is convert a BarelyML string
-  //       to something that convertFromAsciiDoc will turn into a
-  //       BarelyML string again.
-  
   StringArray lines;
   lines.addLines(bml);
   String ad;
@@ -594,7 +655,7 @@ String BarelyMLDisplay::convertToAsciiDoc(String bml) {
     if (line.startsWith("HINT: ")) { line = "TIP: " + line.substring(6); }
 
     // add line
-    ad += line + "\n";
+    ad += line + (li<lines.size()-1?"\n":"");
   }
   
   // replace color markers (named colors only)
@@ -673,9 +734,10 @@ void BarelyMLDisplay::Block::mouseUp(const MouseEvent& event) {
   }
 }
 
-AttributedString BarelyMLDisplay::Block::parsePureText(const StringArray& lines, Font font)
+AttributedString BarelyMLDisplay::Block::parsePureText(const StringArray& lines, Font font, bool addNewline)
 {
   AttributedString attributedString;
+  
   String currentLine;
   currentColour = defaultColour;
   
@@ -686,23 +748,23 @@ AttributedString BarelyMLDisplay::Block::parsePureText(const StringArray& lines,
   {
     if (line.startsWith("##### "))
     {
-      attributedString.append(line.substring(6), font.boldened().withHeight(font.getHeight()*1.1f), defaultColour);
+      attributedString.append(parsePureText(line.substring(6), font.boldened().withHeight(font.getHeight()*1.1f),false));
     }
     else if (line.startsWith("#### "))
     {
-      attributedString.append(line.substring(5), font.boldened().withHeight(font.getHeight()*1.25f), defaultColour);
+      attributedString.append(parsePureText(line.substring(5), font.boldened().withHeight(font.getHeight()*1.25f),false));
     }
     else if (line.startsWith("### "))
     {
-      attributedString.append(line.substring(4), font.boldened().withHeight(font.getHeight()*1.42f), defaultColour);
+      attributedString.append(parsePureText(line.substring(4), font.boldened().withHeight(font.getHeight()*1.42f),false));
     }
     else if (line.startsWith("## "))
     {
-      attributedString.append(line.substring(3), font.boldened().withHeight(font.getHeight()*1.7f), defaultColour);
+      attributedString.append(parsePureText(line.substring(3), font.boldened().withHeight(font.getHeight()*1.7f),false));
     }
     else if (line.startsWith("# "))
     {
-      attributedString.append(line.substring(2), font.boldened().withHeight(font.getHeight()*2.1f), defaultColour);
+      attributedString.append(parsePureText(line.substring(2), font.boldened().withHeight(font.getHeight()*2.1f),false));
     }
     else
     {
@@ -778,7 +840,9 @@ AttributedString BarelyMLDisplay::Block::parsePureText(const StringArray& lines,
       }
     }
     
-    attributedString.append(" \n", font, defaultColour);
+    if (addNewline) {
+      attributedString.append(" \n", font, defaultColour);
+    }
   }
   return attributedString;
 }
@@ -796,8 +860,7 @@ float BarelyMLDisplay::TextBlock::getHeightRequired(float width) {
 }
 
 void BarelyMLDisplay::TextBlock::paint(juce::Graphics& g) {
-//  g.fillAll(Colours::lightblue);   // clear the background
-  attributedString.draw(g, getLocalBounds().toFloat().expanded(0, 1.f));
+  attributedString.draw(g, getLocalBounds().toFloat());
 }
 
 // MARK: - Admonition Block
@@ -942,7 +1005,6 @@ void BarelyMLDisplay::TableBlock::resized() {
 }
 
 void BarelyMLDisplay::TableBlock::Table::paint(juce::Graphics& g) {
-//  g.fillAll(Colours::lightpink);      // clear the background
   float y = 0.f;    // Y coordinate of cell's top left corner
   for (int i=0; i<cells.size(); i++) {
     float x = leftmargin;  // X coordinate of cell's top left corner

@@ -8,6 +8,12 @@ As a plus, BarelyMLDisplay can convert simple Markdown, DokuWiki, and AsciiDoc c
 
 ## Version history
 
+### 0.2.1 (2023-10-20)
+- Fixes a bug where AsciiDoc link labels with spaces in them are not recognized
+- Improves BarelyML <--> Markdown conversion
+- Adds custom colour scheme and non-standard font to BarelyMLDemo 
+- Improves drawing of text blocks
+
 ### 0.2 (2023-10-20)
 - Comes now with an interactice demo (as a PIP for the Projucer)
 - Fixes a bug where text may be not displayed (see [JUCE Forum](https://forum.juce.com/t/attributedstring-last-line-disappearing-when-preceding-line-was-wrapped/58396))

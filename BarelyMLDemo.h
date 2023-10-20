@@ -5,7 +5,7 @@
  BEGIN_JUCE_PIP_METADATA
  
  name:             BarelyMLDemo
- version:          0.2
+ version:          0.2.1
  vendor:           Fritz Menzer
  website:          https://mnsp.ch
  description:      A simple demo of the BarelyMLDisplay component, showing how Strings in various formats can be converted to BarelyML and displayed.
@@ -41,23 +41,37 @@ public:
   //==============================================================================
   BarelyMLDemo()
   {
+    // create a custom color scheme
+    StringPairArray colours;
+    colours.set("black",        "#000");
+    colours.set("blue",         "#00F");
+    colours.set("green",        "#0B0");
+    colours.set("red",          "#C00");
+    colours.set("yellow",       "#BB0");
+    colours.set("orange",       "#F92");
+    colours.set("linkcolour",   "#77F");
+    colours.set("default",      "#333");
+
     // set up the BarelyMLDisplay
     addAndMakeVisible(display);
-    display.setFont(Font("Helvetica Neue", 15.0f, 0));
+    display.setFont(Font("Palatino", 15.0f, 0));
+    display.setColours(colours);
+    display.setBGColour(Colours::wheat.brighter().brighter());
+    display.setTableColours(Colours::wheat, Colours::beige.darker());
 
     // set up the BarelyML TextEditor
     addAndMakeVisible(editor);
     editor.setMultiLine(true);
     editor.setReturnKeyStartsNewLine(true);
     editor.addListener(this);
-    editor.setFont(Font(Font::getDefaultMonospacedFontName(), 15.0f, 0));
+    editor.setFont(Font("Monaco", 15.0f, 0));
 
     // set up the TextEditor for importing other formats
     addChildComponent(importEditor);
     importEditor.setMultiLine(true);
     importEditor.setReturnKeyStartsNewLine(true);
     importEditor.addListener(this);
-    importEditor.setFont(Font(Font::getDefaultMonospacedFontName(), 15.0f, 0));
+    importEditor.setFont(Font("Monaco", 15.0f, 0));
 
     // set up the format Label
     formatLabel.setText("Markup Format", dontSendNotification);
@@ -101,17 +115,15 @@ public:
       importEditor.setVisible(false);
       editor.setEnabled(true);
     } else {
-      if (!importEditor.isVisible()) {
-        // we're switching from BarelyML to another markup language,
-        // i.e. we should put something in the importEditor
-        // => let's convert BarelyML to the chosen markup language.
-        if (formatBox.getSelectedId() == Markdown_ID) {
-          importEditor.setText(BarelyMLDisplay::convertToMarkdown(editor.getText()));
-        } else if (formatBox.getSelectedId() == DokuWiki_ID) {
-          importEditor.setText(BarelyMLDisplay::convertToDokuWiki(editor.getText()));
-        } else if (formatBox.getSelectedId() == AsciiDoc_ID) {
-          importEditor.setText(BarelyMLDisplay::convertToAsciiDoc(editor.getText()));
-        }
+      // we're switching to another markup language, i.e. we
+      // should put something in the importEditor
+      // => convert BarelyML to the chosen markup language.
+      if (formatBox.getSelectedId() == Markdown_ID) {
+        importEditor.setText(BarelyMLDisplay::convertToMarkdown(editor.getText()));
+      } else if (formatBox.getSelectedId() == DokuWiki_ID) {
+        importEditor.setText(BarelyMLDisplay::convertToDokuWiki(editor.getText()));
+      } else if (formatBox.getSelectedId() == AsciiDoc_ID) {
+        importEditor.setText(BarelyMLDisplay::convertToAsciiDoc(editor.getText()));
       }
       importEditor.setVisible(true);
       editor.setEnabled(false);

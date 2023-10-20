@@ -4,7 +4,7 @@
  BarelyML.h
  Created: 5 Oct 2023
  Author:  Fritz Menzer
- Version: 0.2
+ Version: 0.2.1
  
  ==============================================================================
  Copyright (C) 2023 Fritz Menzer
@@ -185,14 +185,17 @@ private:
     juce::String consumeLink(juce::String line);
     virtual void parseMarkup(const juce::StringArray& lines, juce::Font font) {};
     virtual float getHeightRequired(float width) = 0;
-    void setColours(juce::StringPairArray* c) { colours = c; };
+    void setColours(juce::StringPairArray* c) { 
+      colours = c;
+      defaultColour = parseHexColour((*colours)["default"]);
+    };
     virtual bool canExtendBeyondMargin() { return false; }; // for tables
     // mouse handlers for clicking on links
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
 
   protected:
-    juce::AttributedString parsePureText(const juce::StringArray& lines, juce::Font font);
+    juce::AttributedString parsePureText(const juce::StringArray& lines, juce::Font font, bool addNewline = true);
     juce::Colour defaultColour;
     juce::Colour currentColour;
     juce::StringPairArray* colours;
@@ -249,7 +252,7 @@ private:
   private:
     typedef struct {
       juce::AttributedString s;
-      bool isHeader;
+      bool  isHeader;
       float width;
       float height;
     } Cell;
