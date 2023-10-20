@@ -4,7 +4,7 @@
  BarelyML.cpp
  Created: 5 Oct 2023
  Author:  Fritz Menzer
- Version: 0.1
+ Version: 0.2
 
  ==============================================================================
  Copyright (C) 2023 Fritz Menzer
@@ -31,6 +31,8 @@
 
 #include <JuceHeader.h>
 #include "BarelyML.h"
+
+using namespace juce;
 
 //==============================================================================
 
@@ -61,6 +63,9 @@ BarelyMLDisplay::BarelyMLDisplay()
   colours.set("purple",       "#A0F");
   colours.set("gray",         "#777");
   colours.set("linkcolour",   "#00A");
+  
+  // default font
+  font = Font(15);
   
   // default background
   bg = Colours::white;
@@ -125,7 +130,7 @@ void BarelyMLDisplay::resized()
   viewport.setViewPosition(0, newScrollY);
 }
 
-void BarelyMLDisplay::setMarkupString(String s, Font font) {
+void BarelyMLDisplay::setMarkupString(String s) {
   blocks.clear();
   StringArray lines;
   lines.addLines(s);
@@ -208,7 +213,7 @@ void BarelyMLDisplay::setMarkupString(String s, Font font) {
 String BarelyMLDisplay::convertFromMarkdown(String md) {
   StringArray lines;
   lines.addLines(md);
-  String output;
+  String bml;
   bool lastLineWasTable = false;
   for (int li=0; li<lines.size(); li++) {
     String line = lines[li];
@@ -248,24 +253,359 @@ String BarelyMLDisplay::convertFromMarkdown(String md) {
     if (!lastLineWasTable || !(line.containsOnly("| -\t") && line.isNotEmpty())) {
       // if we found a table...
       if (line.trim().startsWith("|")) {
-        // ...and this is the first line...
-        if (!lastLineWasTable) {
+        // ...and this is the first line and the next line is a header separator...
+        if (!lastLineWasTable && li+1<lines.size() && lines[li+1].isNotEmpty() && lines[li+1].containsOnly("| -\t") && lines[li+1].contains("-")) {
           lastLineWasTable = true;        // ...keep track of it...
           line = line.replace("|", "^");  // ...and make its cells header cells.
         }
       } else {
         lastLineWasTable = false;         // ...otherwise, keep also track.
       }
-      output += line + "\n";
+      bml += line + "\n";
     }
   }
   // replace bold and italic markers
   String tmpBoldMarker = "%%%BarelyML%%%Bold%%%";
-  output = output.replace("**", tmpBoldMarker);
-  output = output.replace("__", tmpBoldMarker);
-  output = output.replace("*", "_");            // replace italic marker
-  output = output.replace(tmpBoldMarker, "*");  // replace temporary bold marker
-  return output;
+  bml = bml.replace("**", tmpBoldMarker);
+  bml = bml.replace("__", tmpBoldMarker);
+  bml = bml.replace("*", "_");            // replace italic marker
+  bml = bml.replace(tmpBoldMarker, "*");  // replace temporary bold marker
+  return bml;
+}
+
+String BarelyMLDisplay::convertToMarkdown(String bml) {
+  // NOTE: for now, all this method does is convert a BarelyML string
+  //       to something that convertFromMarkdown will turn into a
+  //       BarelyML string again.
+
+  String md = bml;
+  // replace bold markers
+  md = md.replace("*", "**");
+  return md;
+}
+
+String BarelyMLDisplay::convertFromDokuWiki(String dw) {
+  StringArray lines;
+  lines.addLines(dw);
+  String bml;
+  Array<int> oLI = {1, 1, 1, 1, 1}; // ordered list indices up to 5 nesting levels supported
+  for (int li=0; li<lines.size(); li++) {
+    String line = lines[li];
+    // replace headings
+    bool isHeading = false;
+    if (line.startsWith("====== ")) { line = "# " + line.substring(7); isHeading = true; }
+    if (line.startsWith("===== ")) { line = "## " + line.substring(6); isHeading = true; }
+    if (line.startsWith("==== ")) { line = "### " + line.substring(5); isHeading = true; }
+    if (line.startsWith("=== ")) { line = "#### " + line.substring(4); isHeading = true; }
+    if (line.startsWith("== ")) { line = "##### " + line.substring(3); isHeading = true; }
+    if (isHeading) { // if we've identified a heading, let's drop the trailing markup
+      while (line.endsWith(" ") || line.endsWith("=")) {
+        line = line.dropLastCharacters(1);
+      }
+    }
+    // replace ordered list markers (up to 5 nesting levels);
+    int oLLevel = 0;
+    bool isOL = false;
+    if (line.startsWith("  - ")) { line =     String(oLI[0]) + ". " + line.substring(4); oLLevel = 1; isOL = true; }
+    if (line.startsWith("    - ")) { line = " " + String(oLI[1]) + ". " + line.substring(6); oLLevel = 2; isOL = true; }
+    if (line.startsWith("      - ")) { line = "  " + String(oLI[2]) + ". " + line.substring(8); oLLevel = 3; isOL = true; }
+    if (line.startsWith("        - ")) { line = "   " + String(oLI[3]) + ". " + line.substring(10); oLLevel = 4; isOL = true; }
+    if (line.startsWith("          - ")) { line = "    " + String(oLI[4]) + ". " + line.substring(12); oLLevel = 5; isOL = true; }
+    if (isOL) { // if we've identified an ordered list item, keep track of indices
+      oLI.set(oLLevel-1, oLI[oLLevel-1] + 1); // increase counter at this level
+    }
+    // reset the indices for deeper levels
+    for (int i = oLLevel; i < 5; i++) {
+      oLI.set(i, 1);
+    }
+    // replace unordered list markers (up to 5 nesting levels);
+    if (line.startsWith("  * ")) { line = "- " + line.substring(4); }
+    if (line.startsWith("    * ")) { line = " - " + line.substring(6); }
+    if (line.startsWith("      * ")) { line = "  - " + line.substring(8); }
+    if (line.startsWith("        * ")) { line = "   - " + line.substring(10); }
+    if (line.startsWith("          * ")) { line = "    - " + line.substring(12); }
+    // add line
+    bml += line + "\n";
+  }
+  
+  // save the URLs
+  bml = bml.replace("[[http://", "[[http%%%BarelyML%%%URLSEPARATOR%%%");
+  bml = bml.replace("[[https://", "[[https%%%BarelyML%%%URLSEPARATOR%%%");
+
+  // replace bold and italic markers
+  bml = bml.replace("**", "*");
+  bml = bml.replace("//", "_");
+
+  // restore the URLS
+  bml = bml.replace("%%%BarelyML%%%URLSEPARATOR%%%", "://");
+  
+  // replace color markers (supporting a subset of the "color" plugin syntax)
+  bml = bml.replace("<color #", "<c#");
+  bml = bml.replace("<color " , "<c:");
+  bml = bml.replace("</color>", "</c>");
+  
+  return bml;
+}
+
+String BarelyMLDisplay::convertToDokuWiki(String bml) {
+  // NOTE: for now, all this method does is convert a BarelyML string
+  //       to something that convertFromDokuWiki will turn into a
+  //       BarelyML string again.
+  
+  StringArray lines;
+  lines.addLines(bml);
+  String dw;
+  
+  for (int li=0; li<lines.size(); li++) {
+    String line = lines[li];
+    // replace bold and italic markers
+    line = line.replace("*", "**");
+    line = line.replace("_", "//");
+    // replace headings
+    if (line.startsWith("# ")) { line = "====== " + line.substring(2) + " ======"; }
+    if (line.startsWith("## ")) { line = "===== " + line.substring(3) + " ====="; }
+    if (line.startsWith("### ")) { line = "==== " + line.substring(4) + " ===="; }
+    if (line.startsWith("#### ")) { line = "=== " + line.substring(5) + " ==="; }
+    if (line.startsWith("##### ")) { line = "== " + line.substring(6) + " =="; }
+    // replace unordered list markers (up to 5 nesting levels);
+    if (line.startsWith("- ")) { line = "  * " + line.substring(2); }
+    if (line.startsWith(" - ")) { line = "    * " + line.substring(3); }
+    if (line.startsWith("  - ")) { line = "      * " + line.substring(4); }
+    if (line.startsWith("   - ")) { line = "        * " + line.substring(5); }
+    if (line.startsWith("    - ")) { line = "          * " + line.substring(6); }
+    // replace ordered list markers (up to 5 nesting levels)
+    if (line.indexOf(". ")>0 && line.substring(0, line.indexOf(". ")).trim().containsOnly("0123456789")) {
+      int didx = line.indexOf(". ");
+      if (line.startsWith("    ") && line.substring(4, didx).containsOnly("0123456789")) { line = "          - " + line.substring(didx+2); }
+      if (line.startsWith("   ") && line.substring(3, didx).containsOnly("0123456789")) { line = "        - " + line.substring(didx+2); }
+      if (line.startsWith("  ") && line.substring(2, didx).containsOnly("0123456789")) { line = "      - " + line.substring(didx+2); }
+      if (line.startsWith(" ") && line.substring(1, didx).containsOnly("0123456789")) { line = "    - " + line.substring(didx+2); }
+      if (                       line.substring(0, didx).containsOnly("0123456789")) { line = "  - " + line.substring(didx+2); }
+    }
+    // add line
+    dw += line + "\n";
+  }
+
+  // replace color markers (supporting a subset of the "color" plugin syntax)
+  dw = dw.replace("<c#" , "<color #");
+  dw = dw.replace("<c:" , "<color ");
+  dw = dw.replace("</c>", "</color>");
+  
+  return dw;
+}
+
+String BarelyMLDisplay::convertFromAsciiDoc(String ad) {
+  StringArray lines;
+  lines.addLines(ad);
+  String bml;
+  Array<int> oLI = {1, 1, 1, 1, 1}; // ordered list indices up to 5 nesting levels supported
+  bool isTable = false;
+  int tableCols = 0;
+  for (int li=0; li<lines.size(); li++) {
+    String line = lines[li];
+    bool skipLine = false;
+    // skip lines in square brackets (these are used for features we don't support)
+    if (line.startsWith("[") && line.endsWith("]")) { skipLine = true; }
+    // skip table delimiters
+    if (line.startsWith("|") && line.substring(1).containsOnly("=")) { skipLine = true; isTable = !isTable; tableCols = 0; }
+    // handle table
+    if (!skipLine && line.startsWith("|")) {
+      if (tableCols == 0) {  // first line -> contains all columns (not guaranteed for remaining lines)
+        // count columns
+        String tmp = line;
+        while (tmp.contains("|")) {
+          tmp = tmp.fromFirstOccurrenceOf("|", false, false);
+          tableCols++;
+        }
+        // check if next line is empty
+        if (li+1<lines.size() && lines[li+1].isEmpty()) { // empty -> header
+          // let's remove ^ characters first, otherwise there will be alignment issues
+          line = line.replace("^","").replace("|", "^") + " ^";
+        } else { // not empty -> regular table row
+          line = line + " |";
+        }
+      } else {
+        // when we're here this is the first line of a non-header table row
+        int colsFound = 0;
+        // count columns in this line
+        String tmp = line;
+        while (tmp.contains("|")) {
+          tmp = tmp.fromFirstOccurrenceOf("|", false, false);
+          colsFound++;
+        }
+        // accumulate lines until we've found enough columns
+        while (colsFound < tableCols && li+1<lines.size() && lines[li+1].startsWith("|") && !lines[li+1].substring(1).containsOnly("=")) {
+          String nextLine = lines[++li];
+          line += nextLine;
+          while (nextLine.contains("|")) {
+            nextLine = nextLine.fromFirstOccurrenceOf("|", false, false);
+            colsFound++;
+          }
+        }
+        line += " |";
+      }
+    }
+    // skip empty line inside table
+    if (isTable && line.isEmpty()) { skipLine = true; }
+    // replace headings
+    if (line.startsWith("= ")) { line = "# " + line.substring(2); }
+    if (line.startsWith("== ")) { line = "## " + line.substring(3); }
+    if (line.startsWith("=== ")) { line = "### " + line.substring(4); }
+    if (line.startsWith("==== ")) { line = "#### " + line.substring(5); }
+    if (line.startsWith("===== ")) { line = "##### " + line.substring(6); }
+    // replace ordered list markers (up to 5 nesting levels);
+    int oLLevel = 0;
+    bool isOL = false;
+    if (line.startsWith(". ")) { line =     String(oLI[0]) + ". " + line.substring(2); oLLevel = 1; isOL = true; }
+    if (line.startsWith(".. ")) { line = " " + String(oLI[1]) + ". " + line.substring(3); oLLevel = 2; isOL = true; }
+    if (line.startsWith("... ")) { line = "  " + String(oLI[2]) + ". " + line.substring(4); oLLevel = 3; isOL = true; }
+    if (line.startsWith(".... ")) { line = "   " + String(oLI[3]) + ". " + line.substring(5); oLLevel = 4; isOL = true; }
+    if (line.startsWith("..... ")) { line = "    " + String(oLI[4]) + ". " + line.substring(6); oLLevel = 5; isOL = true; }
+    if (isOL) { // if we've identified an ordered list item, keep track of indices
+      oLI.set(oLLevel-1, oLI[oLLevel-1] + 1); // increase counter at this level
+    }
+    // reset the indices for deeper levels
+    for (int i = oLLevel; i < 5; i++) {
+      oLI.set(i, 1);
+    }
+    // replace unordered list markers (up to 5 nesting levels);
+    if (line.startsWith("* ")) { line = "- " + line.substring(2); }
+    if (line.startsWith("** ")) { line = " - " + line.substring(3); }
+    if (line.startsWith("*** ")) { line = "  - " + line.substring(4); }
+    if (line.startsWith("**** ")) { line = "   - " + line.substring(5); }
+    if (line.startsWith("***** ")) { line = "    - " + line.substring(6); }
+    
+    // replace admonitions (only NOTE and TIP, the other ones are identical)
+    if (line.startsWith("NOTE: ")) { line = "INFO: " + line.substring(6); }
+    if (line.startsWith("TIP: ")) { line = "HINT: " + line.substring(5); }
+
+    // replace links
+    StringArray linkSchemes = {"http://", "https://", "mailto:"};
+    StringArray precedingChar = {" ", "\t"};
+    for (int s=0; s<linkSchemes.size(); s++) {
+      for (int p=0; p<precedingChar.size(); p++) {
+        String target = precedingChar[p] + linkSchemes[s];
+        while (line.contains(target) || line.startsWith(linkSchemes[s])) {
+          int idx1 = line.indexOf(target)+1;
+          if (idx1<0) { // if we don't find the target...
+            idx1 = 0;   // ...that means the line starts with the link scheme
+          }
+          int idx2 = line.indexOf(idx1, " ");
+          if (idx2<0) { idx2 = line.indexOf(idx1, "\t"); }
+          if (idx2<0) { idx2 = line.length(); }
+          String link = line.substring(idx1, idx2);
+          if (link.contains("[") && link.endsWith("]")) {
+            int lidx = link.indexOf("[");
+            line = line.substring(0, idx1) + "[[" + link.substring(0, lidx) + "|" + link.substring(lidx+1) + "]" + line.substring(idx2);
+          } else {
+            line = line.substring(0, idx1) + "[[" + link + "]]" + line.substring(idx2);
+          }
+        }
+      }
+    }
+
+    // add line
+    if (!skipLine) {
+      bml += line + "\n";
+    }
+  }
+  
+  // replace bold and italic markers
+  bml = bml.replace("**", "*");
+  bml = bml.replace("__", "_");
+  
+  // replace color markers (which are actually style markers, so this is not perfectly accurate)
+  while (bml.contains("]#") && bml.fromLastOccurrenceOf("]#", false, false).contains("#") && bml.upToLastOccurrenceOf("]#", false, false).contains("[")) {
+    int idx2 = bml.lastIndexOf("]#");
+    int idx1 = bml.substring(0, idx2).lastIndexOf("[");
+    int idx3 = bml.indexOf(idx2+2, "#");
+    bml = bml.substring(0, idx1) + "<c:" + bml.substring(idx1+1, idx2) + ">" + bml.substring(idx2+2,idx3) + "</c>" + bml.substring(idx3+1);
+  }
+  
+  return bml;
+}
+
+String BarelyMLDisplay::convertToAsciiDoc(String bml) {
+  // NOTE: for now, all this method does is convert a BarelyML string
+  //       to something that convertFromAsciiDoc will turn into a
+  //       BarelyML string again.
+  
+  StringArray lines;
+  lines.addLines(bml);
+  String ad;
+  
+  bool isTable = false;
+  
+  for (int li=0; li<lines.size(); li++) {
+    String line = lines[li];
+    // table
+    if (line.startsWith("^") || line.startsWith("|")) {
+      if (!isTable) { // this is the first line
+        line = "|===\n" + line.replace("^", "|").upToLastOccurrenceOf("|", false, false) + "\n";
+      } else {
+        // drop the trailing | or ^ (note that we assume reasonable well-formedness here)
+        line = line.trimEnd().dropLastCharacters(1);
+      }
+      isTable = true;
+      if (li+1 >= lines.size() || !(lines[li+1].startsWith("|") || lines[li+1].startsWith("^"))) {
+        // insert a table delimiter before the next line
+        line += "\n|===";
+        isTable = false;
+      }
+    }
+    // replace headings
+    if (line.startsWith("# ")) { line = "= " + line.substring(2); }
+    if (line.startsWith("## ")) { line = "== " + line.substring(3); }
+    if (line.startsWith("### ")) { line = "=== " + line.substring(4); }
+    if (line.startsWith("#### ")) { line = "==== " + line.substring(5); }
+    if (line.startsWith("##### ")) { line = "===== " + line.substring(6); }
+    // replace unordered list markers (up to 5 nesting levels);
+    if (line.startsWith("- ")) { line = "* " + line.substring(2); }
+    if (line.startsWith(" - ")) { line = "** " + line.substring(3); }
+    if (line.startsWith("  - ")) { line = "*** " + line.substring(4); }
+    if (line.startsWith("   - ")) { line = "**** " + line.substring(5); }
+    if (line.startsWith("    - ")) { line = "***** " + line.substring(6); }
+    // replace ordered list markers (up to 5 nesting levels)
+    if (line.indexOf(". ")>0 && line.substring(0, line.indexOf(". ")).trim().containsOnly("0123456789")) {
+      int didx = line.indexOf(". ");
+      if (line.startsWith("    ") && line.substring(4, didx).containsOnly("0123456789")) { line = "..... " + line.substring(didx+2); }
+      if (line.startsWith("   ") && line.substring(3, didx).containsOnly("0123456789")) { line = ".... " + line.substring(didx+2); }
+      if (line.startsWith("  ") && line.substring(2, didx).containsOnly("0123456789")) { line = "... " + line.substring(didx+2); }
+      if (line.startsWith(" ") && line.substring(1, didx).containsOnly("0123456789")) { line = ".. " + line.substring(didx+2); }
+      if (                       line.substring(0, didx).containsOnly("0123456789")) { line = ". " + line.substring(didx+2); }
+    }
+    
+    // replace links
+    while (line.contains("[[") && line.fromFirstOccurrenceOf("[[", false, false).contains("]]")) {
+      int idx1 = line.indexOf("[[");
+      int idx2 = line.indexOf(idx1, "]]");
+      String link = line.substring(idx1+2, idx2);
+      if (link.startsWith("http://") || link.startsWith("https://") || link.startsWith("mailto:")) {
+        if (link.contains("|")) {
+          line = line.substring(0, idx1) + link.upToFirstOccurrenceOf("|", false, false) + "[" + link.fromFirstOccurrenceOf("|", false, false) + "]" + line.substring(idx2+2);
+        } else {
+          line = line.substring(0, idx1) + link + line.substring(idx2+2);
+        }
+      }
+    }
+    
+    // replace admonitions (only INFO and HINT, the other ones are identical)
+    if (line.startsWith("INFO: ")) { line = "NOTE: " + line.substring(6); }
+    if (line.startsWith("HINT: ")) { line = "TIP: " + line.substring(6); }
+
+    // add line
+    ad += line + "\n";
+  }
+  
+  // replace color markers (named colors only)
+  while (ad.contains("<c:") && ad.fromFirstOccurrenceOf("<c:", false, false).contains(">") && ad.fromFirstOccurrenceOf("<c:", false, false).fromFirstOccurrenceOf(">", false, false).contains("</c>")) {
+    int idx1 = ad.indexOf("<c:");
+    int idx2 = ad.indexOf(idx1, ">");
+    int idx3 = ad.indexOf(idx2, "</c>");
+    ad = ad.substring(0, idx1) + "[" + ad.substring(idx1+3, idx2) + "]#" + ad.substring(idx2+1,idx3) + "#" + ad.substring(idx3+4);
+  }
+  
+  return ad;
 }
 
 
@@ -457,7 +797,7 @@ float BarelyMLDisplay::TextBlock::getHeightRequired(float width) {
 
 void BarelyMLDisplay::TextBlock::paint(juce::Graphics& g) {
 //  g.fillAll(Colours::lightblue);   // clear the background
-  attributedString.draw(g, getLocalBounds().toFloat());
+  attributedString.draw(g, getLocalBounds().toFloat().expanded(0, 1.f));
 }
 
 // MARK: - Admonition Block
@@ -481,7 +821,7 @@ void BarelyMLDisplay::AdmonitionBlock::parseAdmonitionMarkup(const String& line,
 float BarelyMLDisplay::AdmonitionBlock::getHeightRequired(float width) {
   TextLayout layout;
   layout.createLayout(attributedString, width-iconsize-2*(margin+linewidth));
-  return layout.getHeight();
+  return jmax(layout.getHeight(),(float)iconsize);
 }
 
 void BarelyMLDisplay::AdmonitionBlock::paint(juce::Graphics& g) {

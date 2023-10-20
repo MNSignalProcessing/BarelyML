@@ -4,7 +4,7 @@
  BarelyML.h
  Created: 5 Oct 2023
  Author:  Fritz Menzer
- Version: 0.1
+ Version: 0.2
  
  ==============================================================================
  Copyright (C) 2023 Fritz Menzer
@@ -99,33 +99,42 @@
 
  TODO: Links in tables
  TODO: Images in tables
- TODO: Add support for more markup formats
  TODO: Icons for admonitions
-
+ 
+ NOTE: The conversion methods FROM OTHER FORMATS TO BarelyML are incomplete,
+       but work for most simple documents. If you have a use case that doesn't
+       work yet, please let me know via GitHub or the JUCE forum and I'll try
+       to make it work.
+  
+       The conversion methods FROM BarelyML TO OTHER FORMATS on the other hand
+       are extremely minimal and only used in the demo application to keep the
+       UI from doing weird stuff when switching the markdown language. For now
+       I don't see any other use, so don't count on this becoming a feature.
+ 
  ==============================================================================
  */
 
 #pragma once
 
-using namespace juce;
-
 #include <JuceHeader.h>
 
 //==============================================================================
-class BarelyMLDisplay  : public Component
+class BarelyMLDisplay  : public juce::Component
 {
 public:
   BarelyMLDisplay();
   ~BarelyMLDisplay() override;
   
+  // MARK: - juce::Component Methods
   void paint (juce::Graphics&) override;
   void resized() override;
   
-  void setMarkupString(String s, Font font = Font(15.0f));
+  // MARK: - Parameters
+  void setFont(juce::Font font) { this->font = font; };
   void setMargin(int m) { margin = m; };
-  void setColours(StringPairArray c) { colours = c; };
-  void setBGColour(Colour bg) { this->bg = bg; };
-  void setTableColours(Colour bg, Colour bgHeader) { tableBG = bg; tableBGHeader = bgHeader; };
+  void setColours(juce::StringPairArray c) { colours = c; };
+  void setBGColour(juce::Colour bg) { this->bg = bg; };
+  void setTableColours(juce::Colour bg, juce::Colour bgHeader) { tableBG = bg; tableBGHeader = bgHeader; };
   void setTableMargins(int margin, int gap) { tableMargin = margin; tableGap = gap; };
   void setListIndents(int indentPerSpace, int labelGap) {
     this->indentPerSpace = indentPerSpace;
@@ -137,78 +146,82 @@ public:
     this->adlinewidth = adlinewidth;
   };
 
-  static String convertFromMarkdown(String md);
-  void setMarkdownString(String md, Font font = Font(15.0f)) {
-    setMarkupString(convertFromMarkdown(md), font);
-  }
+  // MARK: - Format Conversion (static methods)
+  static juce::String convertFromMarkdown(juce::String md);
+  static juce::String convertToMarkdown(juce::String bml);
 
-  /*static String convertFromDokuWiki(String dw);
-  void setDokuWikiString(String dw, Font font = Font(15.0f)) {
-    setMarkupString(convertFromDokuWiki(dw), font);
-  }
+  static juce::String convertFromDokuWiki(juce::String dw);
+  static juce::String convertToDokuWiki(juce::String bml);
+  
+  static juce::String convertFromAsciiDoc(juce::String ad);
+  static juce::String convertToAsciiDoc(juce::String bml);
 
-  static String convertFromAsciiDoc(String ad);
-  void setAsciiDocString(String ad, Font font = Font(15.0f)) {
-    setMarkupString(convertFromDokuWiki(ad), font);
-  }*/
+  // MARK: - Content
+  void setMarkupString(juce::String s);
+  void setMarkdownString(juce::String md) { setMarkupString(convertFromMarkdown(md)); }
+  void setDokuWikiString(juce::String dw) { setMarkupString(convertFromDokuWiki(dw)); }
+  void setAsciiDocString(juce::String ad) { setMarkupString(convertFromDokuWiki(ad)); }
 
+
+  // MARK: - File Handling (for images)
   class FileSource {
   public:
     virtual ~FileSource() {};
-    virtual Image getImageForFilename(String filename) = 0;
+    virtual juce::Image getImageForFilename(juce::String filename) = 0;
   };
   
   void setFileSource(FileSource* fs) { fileSource = fs; }
   
 private:
+  // MARK: - Blocks
   class Block : public Component
   {
   public:
-    Block ()  { colours = nullptr; defaultColour = Colours::black; }
+    Block ()  { colours = nullptr; defaultColour = juce::Colours::black; }
     // static utility methods
-    static Colour parseHexColourStatic(String s, Colour defaultColour);
-    static bool containsLink(String line);
+    static juce::Colour parseHexColourStatic(juce::String s, juce::Colour defaultColour);
+    static bool containsLink(juce::String line);
     // Common functionalities for all blocks
-    String consumeLink(String line);
-    virtual void parseMarkup(const StringArray& lines, Font font) {};
+    juce::String consumeLink(juce::String line);
+    virtual void parseMarkup(const juce::StringArray& lines, juce::Font font) {};
     virtual float getHeightRequired(float width) = 0;
-    void setColours(StringPairArray* c) { colours = c; };
+    void setColours(juce::StringPairArray* c) { colours = c; };
     virtual bool canExtendBeyondMargin() { return false; }; // for tables
     // mouse handlers for clicking on links
-    void mouseDown(const MouseEvent& event) override;
-    void mouseUp(const MouseEvent& event) override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
 
   protected:
-    AttributedString parsePureText(const StringArray& lines, Font font);
-    Colour defaultColour;
-    Colour currentColour;
-    StringPairArray* colours;
-    Colour parseHexColour(String s);
+    juce::AttributedString parsePureText(const juce::StringArray& lines, juce::Font font);
+    juce::Colour defaultColour;
+    juce::Colour currentColour;
+    juce::StringPairArray* colours;
+    juce::Colour parseHexColour(juce::String s);
 
   private:
-    String link;
-    Point<float> mouseDownPosition;
+    juce::String link;
+    juce::Point<float> mouseDownPosition;
   };
   
   class TextBlock  : public Block
   {
   public:
-    void parseMarkup(const StringArray& lines, Font font) override;
+    void parseMarkup(const juce::StringArray& lines, juce::Font font) override;
     float getHeightRequired(float width) override;
     void paint(juce::Graphics&) override;
   private:
-    AttributedString attributedString;
+    juce::AttributedString attributedString;
   };
   
   class AdmonitionBlock  : public Block
   {
   public:
-    static bool isAdmonitionLine(const String& line);
-    void parseAdmonitionMarkup(const String& line, Font font, int iconsize, int margin, int linewidth);
+    static bool isAdmonitionLine(const juce::String& line);
+    void parseAdmonitionMarkup(const juce::String& line, juce::Font font, int iconsize, int margin, int linewidth);
     float getHeightRequired(float width) override;
     void paint(juce::Graphics&) override;
   private:
-    AttributedString attributedString;
+    juce::AttributedString attributedString;
     enum ParagraphType { info, hint, important, caution, warning };
     ParagraphType type;
     int iconsize, margin, linewidth;
@@ -218,12 +231,12 @@ private:
   {
   public:
     TableBlock ();
-    static bool isTableLine(const String& line);
-    void parseMarkup(const StringArray& lines, Font font) override;
+    static bool isTableLine(const juce::String& line);
+    void parseMarkup(const juce::StringArray& lines, juce::Font font) override;
     float getWidthRequired();
     float getHeightRequired(float width) override;
     void resized() override;
-    void setBGColours(Colour bg, Colour bgHeader) {
+    void setBGColours(juce::Colour bg, juce::Colour bgHeader) {
       table.bg = bg;
       table.bgHeader = bgHeader;
     }
@@ -235,52 +248,52 @@ private:
     bool canExtendBeyondMargin() override { return true; };
   private:
     typedef struct {
-      AttributedString s;
+      juce::AttributedString s;
       bool isHeader;
       float width;
       float height;
     } Cell;
-    class InnerViewport : public Viewport {
+    class InnerViewport : public juce::Viewport {
     public:
       // Override the mouse event methods to forward them to the parent Viewport
-      void mouseDown(const MouseEvent& e) override {
-        if (Viewport* parent = findParentComponentOfClass<Viewport>()) {
-          MouseEvent ep = MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
+      void mouseDown(const juce::MouseEvent& e) override {
+        if (juce::Viewport* parent = findParentComponentOfClass<juce::Viewport>()) {
+          juce::MouseEvent ep = juce::MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
           parent->mouseDown(ep);
         }
-        Viewport::mouseDown(e);
+        juce::Viewport::mouseDown(e);
       }
-      void mouseUp(const MouseEvent& e) override {
-        if (Viewport* parent = findParentComponentOfClass<Viewport>()) {
-          MouseEvent ep = MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
+      void mouseUp(const juce::MouseEvent& e) override {
+        if (juce::Viewport* parent = findParentComponentOfClass<juce::Viewport>()) {
+          juce::MouseEvent ep = juce::MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
           parent->mouseUp(ep);
         }
-        Viewport::mouseUp(e);
+        juce::Viewport::mouseUp(e);
       }
-      void mouseDrag(const MouseEvent& e) override {
-        if (Viewport* parent = findParentComponentOfClass<Viewport>()) {
-          MouseEvent ep = MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
+      void mouseDrag(const juce::MouseEvent& e) override {
+        if (juce::Viewport* parent = findParentComponentOfClass<juce::Viewport>()) {
+          juce::MouseEvent ep = juce::MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
           parent->mouseDrag(ep);
         }
-        Viewport::mouseDrag(e);
+        juce::Viewport::mouseDrag(e);
       }
       // Override mouseWheelMove to forward events to the parent Viewport
-      void mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& wheel) override {
-        Viewport* parent = findParentComponentOfClass<Viewport>();
+      void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        juce::Viewport* parent = findParentComponentOfClass<juce::Viewport>();
         if (parent != nullptr) {
-          MouseEvent ep = MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
+          juce::MouseEvent ep = juce::MouseEvent(e.source, e.position, e.mods, e.pressure, e.orientation, e.rotation, e.tiltX, e.tiltY, parent, e.originalComponent, e.eventTime, e.mouseDownPosition, e.mouseDownTime, e.getNumberOfClicks(), e.mouseWasDraggedSinceMouseDown());
           parent->mouseWheelMove(ep, wheel);
         }
-        Viewport::mouseWheelMove(e, wheel);
+        juce::Viewport::mouseWheelMove(e, wheel);
       }
     };
-    class Table : public Component {
+    class Table : public juce::Component {
     public:
       void paint(juce::Graphics&) override;
-      OwnedArray<OwnedArray<Cell>> cells;
-      Array<float> columnwidths;
-      Array<float> rowheights;
-      Colour bg, bgHeader;
+      juce::OwnedArray<juce::OwnedArray<Cell>> cells;
+      juce::Array<float> columnwidths;
+      juce::Array<float> rowheights;
+      juce::Colour bg, bgHeader;
       int cellmargin, cellgap, leftmargin;
     };
     InnerViewport viewport;
@@ -290,44 +303,46 @@ private:
   class ImageBlock : public Block
   {
   public:
-    static bool isImageLine(const String& line);
-    void parseImageMarkup(const String& line, FileSource* fileSource);
+    static bool isImageLine(const juce::String& line);
+    void parseImageMarkup(const juce::String& line, FileSource* fileSource);
     float getHeightRequired(float width) override;
     void paint(juce::Graphics&) override;
     void resized() override;
   private:
-    AttributedString imageMissingMessage;
-    Image image;
+    juce::AttributedString imageMissingMessage;
+    juce::Image image;
     int maxWidth;
   };
   
   class ListItem : public Block
   {
   public:
-    static bool isListItem(const String& line);
-    void parseItemMarkup(const String& line, Font font, int indentPerSpace, int gap);
+    static bool isListItem(const juce::String& line);
+    void parseItemMarkup(const juce::String& line, juce::Font font, int indentPerSpace, int gap);
     float getHeightRequired(float width) override;
     void paint(juce::Graphics&) override;
   private:
-    AttributedString attributedString;
-    AttributedString label;
+    juce::AttributedString attributedString;
+    juce::AttributedString label;
     int indent;
     int gap;
   };
   
-  StringPairArray colours;        // colour palette
-  Colour bg;                      // background colour
-  Colour tableBG, tableBGHeader;  // table background colours
-  int tableMargin, tableGap;      // table margins
-  int indentPerSpace, labelGap;   // list item indents
-  Viewport  viewport;             // a viewport to scroll the content
-  Component content;              // a component with the content
-  OwnedArray<Block> blocks;       // representation of the document as blocks
-  int margin;                     // content margin in pixels
-  int iconsize;                   // admonition icon size in pixels
-  int admargin;                   // admonition margin in pixels
-  int adlinewidth;                // admonition line width in pixels
-  FileSource* fileSource;         // data source for image files, etc.
+  // MARK: - Private Variables
+  juce::StringPairArray colours;        // colour palette
+  juce::Colour bg;                      // background colour
+  juce::Colour tableBG, tableBGHeader;  // table background colours
+  int tableMargin, tableGap;            // table margins
+  int indentPerSpace, labelGap;         // list item indents
+  juce::Viewport  viewport;             // a viewport to scroll the content
+  juce::Component content;              // a component with the content
+  juce::OwnedArray<Block> blocks;       // representation of the document as blocks
+  int margin;                           // content margin in pixels
+  int iconsize;                         // admonition icon size in pixels
+  int admargin;                         // admonition margin in pixels
+  int adlinewidth;                      // admonition line width in pixels
+  FileSource* fileSource;               // data source for image files, etc.
+  juce::Font font;                      // default font for regular text
   
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BarelyMLDisplay)
 };
