@@ -4,10 +4,10 @@
  BarelyML.h
  Created: 5 Oct 2023
  Author:  Fritz Menzer
- Version: 0.2.1
+ Version: 0.3
  
  ==============================================================================
- Copyright (C) 2023 Fritz Menzer
+ Copyright (C) 2023-2024 Fritz Menzer
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of BarelyML and associated documentation files (the "Software"), to deal
@@ -60,10 +60,12 @@
 
  Tables
 
- ^ Header 1      ^ Header 2     ^
- | Cell 1-1      | Cell 1-2     |
- ^ Also a header | Not a header |
-
+ ^ Header 1      ^ Header 2          ^
+ | Regular cell  | {{image.svg?100}} |
+ ^ Also a header | Not a header      |
+ 
+ Cells can contain either images or text.
+ Line breaks within cell text: \\
 
  Font Colour
 
@@ -97,8 +99,6 @@
  CAUTION: This is a caution paragraph (yellow tab).
  WARNING: This is a warning paragraph (orange tab).
 
- TODO: Links in tables
- TODO: Images in tables
  TODO: Icons for admonitions
  
  NOTE: The conversion methods FROM OTHER FORMATS TO BarelyML are incomplete,
@@ -132,18 +132,20 @@ public:
   // MARK: - Parameters
   void setFont(juce::Font font) { this->font = font; };
   void setMargin(int m) { margin = m; };
-  void setColours(juce::StringPairArray c) { colours = c; };
-  void setBGColour(juce::Colour bg) { this->bg = bg; };
-  void setTableColours(juce::Colour bg, juce::Colour bgHeader) { tableBG = bg; tableBGHeader = bgHeader; };
-  void setTableMargins(int margin, int gap) { tableMargin = margin; tableGap = gap; };
+  void setColours(juce::StringPairArray c) { colours = c; setMarkupString(markupString); };
+  void setBGColour(juce::Colour bg) { this->bg = bg; setMarkupString(markupString); };
+  void setTableColours(juce::Colour bg, juce::Colour bgHeader) { tableBG = bg; tableBGHeader = bgHeader; setMarkupString(markupString); };
+  void setTableMargins(int margin, int gap) { tableMargin = margin; tableGap = gap; setMarkupString(markupString); };
   void setListIndents(int indentPerSpace, int labelGap) {
     this->indentPerSpace = indentPerSpace;
     this->labelGap = labelGap;
+    setMarkupString(markupString);
   };
   void setAdmonitionSizes(int iconsize, int admargin, int adlinewidth) {
     this->iconsize = iconsize;
     this->admargin = admargin;
     this->adlinewidth = adlinewidth;
+    setMarkupString(markupString);
   };
 
   // MARK: - Format Conversion (static methods)
@@ -167,11 +169,27 @@ public:
   class FileSource {
   public:
     virtual ~FileSource() {};
-    virtual juce::Image getImageForFilename(juce::String filename) = 0;
+    virtual std::unique_ptr<juce::Drawable> getDrawableForFilename(juce::String filename) = 0;
   };
   
   void setFileSource(FileSource* fs) { fileSource = fs; }
   
+  // MARK: - URL Handling (for custom link types)
+  class URLHandler {
+  public:
+    virtual ~URLHandler() {};
+    virtual bool handleURL(juce::String url) = 0; // returns true if it handled the URL
+  };
+  
+  void setURLHandler(URLHandler* uh) { urlHandler = uh; }
+  void handleURL(juce::String url) {
+    // Check if URL handler exists and can handle our URL...
+    if (!urlHandler || !urlHandler->handleURL(url)) {
+      // ...and if not, let JUCE's URL class handle it.
+      juce::URL(url).launchInDefaultBrowser();
+    }
+  }
+
 private:
   // MARK: - Blocks
   class Block : public Component
@@ -182,7 +200,7 @@ private:
     static juce::Colour parseHexColourStatic(juce::String s, juce::Colour defaultColour);
     static bool containsLink(juce::String line);
     // Common functionalities for all blocks
-    juce::String consumeLink(juce::String line);
+    juce::String consumeLink(juce::String line, juce::String* link = nullptr);
     virtual void parseMarkup(const juce::StringArray& lines, juce::Font font) {};
     virtual float getHeightRequired(float width) = 0;
     void setColours(juce::StringPairArray* c) { 
@@ -193,6 +211,8 @@ private:
     // mouse handlers for clicking on links
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
+    
+    void setBMLDisplay(BarelyMLDisplay* bd) { bmlDisplay = bd; }
 
   protected:
     juce::AttributedString parsePureText(const juce::StringArray& lines, juce::Font font, bool addNewline = true);
@@ -200,6 +220,7 @@ private:
     juce::Colour currentColour;
     juce::StringPairArray* colours;
     juce::Colour parseHexColour(juce::String s);
+    BarelyMLDisplay* bmlDisplay;
 
   private:
     juce::String link;
@@ -249,9 +270,13 @@ private:
       table.leftmargin = leftmargin;
     }
     bool canExtendBeyondMargin() override { return true; };
+    void setFileSource(FileSource* fs) { fileSource = fs; };
   private:
+    FileSource* fileSource;
     typedef struct {
       juce::AttributedString s;
+      std::unique_ptr<juce::Drawable> drawable;
+      juce::String link;
       bool  isHeader;
       float width;
       float height;
@@ -298,6 +323,12 @@ private:
       juce::Array<float> rowheights;
       juce::Colour bg, bgHeader;
       int cellmargin, cellgap, leftmargin;
+      void mouseDown(const juce::MouseEvent& event) override;
+      void mouseUp(const juce::MouseEvent& event) override;
+      void setBMLDisplay(BarelyMLDisplay* bd) { bmlDisplay = bd; }
+    private:
+      juce::Point<float> mouseDownPosition;
+      BarelyMLDisplay* bmlDisplay;
     };
     InnerViewport viewport;
     Table table;
@@ -313,7 +344,7 @@ private:
     void resized() override;
   private:
     juce::AttributedString imageMissingMessage;
-    juce::Image image;
+    std::unique_ptr<juce::Drawable> drawable;
     int maxWidth;
   };
   
@@ -332,6 +363,7 @@ private:
   };
   
   // MARK: - Private Variables
+  juce::String markupString;            // current markup string
   juce::StringPairArray colours;        // colour palette
   juce::Colour bg;                      // background colour
   juce::Colour tableBG, tableBGHeader;  // table background colours
@@ -345,6 +377,7 @@ private:
   int admargin;                         // admonition margin in pixels
   int adlinewidth;                      // admonition line width in pixels
   FileSource* fileSource;               // data source for image files, etc.
+  URLHandler* urlHandler;               // URL handler for custom URLs
   juce::Font font;                      // default font for regular text
   
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BarelyMLDisplay)

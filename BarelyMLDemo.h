@@ -5,7 +5,7 @@
  BEGIN_JUCE_PIP_METADATA
  
  name:             BarelyMLDemo
- version:          0.2.1
+ version:          0.3
  vendor:           Fritz Menzer
  website:          https://mnsp.ch
  description:      A simple demo of the BarelyMLDisplay component, showing how Strings in various formats can be converted to BarelyML and displayed.
@@ -35,7 +35,7 @@
 using namespace juce;
 
 //==============================================================================
-class BarelyMLDemo  : public Component, TextEditor::Listener, ComboBox::Listener
+class BarelyMLDemo  : public Component, BarelyMLDisplay::URLHandler, TextEditor::Listener, ComboBox::Listener
 {
 public:
   //==============================================================================
@@ -58,6 +58,7 @@ public:
     display.setColours(colours);
     display.setBGColour(Colours::wheat.brighter().brighter());
     display.setTableColours(Colours::wheat, Colours::beige.darker());
+    display.setURLHandler(this);
 
     // set up the BarelyML TextEditor
     addAndMakeVisible(editor);
@@ -93,6 +94,16 @@ public:
   {
   }
   
+  // BarelyMLDisplay::URLHandler method (returns true if it could handle URL)
+  virtual bool handleURL(String url) override {
+    if (url.startsWith("MyURL:")) {
+      printf("Handling custom URL: %s\n", url.toRawUTF8());
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   // TextEditor::Listener method
   void textEditorTextChanged (TextEditor& editorThatWasChanged) override {
     if (&editorThatWasChanged == &editor) {
