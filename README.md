@@ -8,6 +8,12 @@ As a plus, BarelyMLDisplay can convert simple Markdown, DokuWiki, and AsciiDoc c
 
 ## Version history
 
+### 0.3 (2024-04-07)
+- Changed the definition of FileSource to enable vector graphics (SVG)
+- Adds a URLHandler class
+- Adds links and images in tables
+- Various minor improvements
+
 ### 0.2.1 (2023-10-20)
 - Fixes a bug where AsciiDoc link labels with spaces in them are not recognized
 - Improves BarelyML <--> Markdown conversion
